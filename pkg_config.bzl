@@ -51,39 +51,37 @@ def _extract_prefix(flags, prefix, strip = True):
     for arg in flags:
         if arg.startswith(prefix):
             if strip:
-                stripped += [arg[len(prefix):]]
+                stripped.append(arg[len(prefix):])
             else:
-                stripped += [arg]
+                stripped.append(arg)
         else:
-            remain += [arg]
+            remain.append(arg)
     return stripped, remain
 
 def _includes(ctx, pkg_config, pkg_name):
     includes = _split(_pkg_config(ctx, pkg_config, pkg_name, ["--cflags-only-I"]))
     if includes.error != None:
         return includes
-    includes, unused = _extract_prefix(includes.value, "-I", strip = True)
+    includes, _unused = _extract_prefix(includes.value, "-I", strip = True)
     return _success(includes)
 
 def _copts(ctx, pkg_config, pkg_name):
     return _split(_pkg_config(ctx, pkg_config, pkg_name, [
         "--cflags-only-other",
         "--libs-only-L",
-        "--static",
-    ]))
+    ] + ["--static"] if ctx.attr.static else []))
 
 def _linkopts(ctx, pkg_config, pkg_name):
     return _split(_pkg_config(ctx, pkg_config, pkg_name, [
         "--libs-only-other",
         "--libs-only-l",
-        "--static",
-    ]))
+    ] + ["--static"] if ctx.attr.static else []))
 
 def _ignore_opts(opts, ignore_opts):
     remain = []
     for opt in opts:
         if opt not in ignore_opts:
-            remain += [opt]
+            remain.append(opt)
     return remain
 
 def _symlinks(ctx, basename, srcpaths):
@@ -94,17 +92,16 @@ def _symlinks(ctx, basename, srcpaths):
     for src in [ctx.path(p) for p in srcpaths]:
         dest = base.get_child(src.basename)
         ctx.symlink(src, dest)
-        result += [str(dest)[rootlen:]]
+        result.append(str(dest)[rootlen:])
     return result
 
 def _deps(ctx, pkg_config, pkg_name):
     deps = _split(_pkg_config(ctx, pkg_config, pkg_name, [
         "--libs-only-L",
-        "--static",
-    ]))
+    ] + ["--static"] if ctx.attr.static else []))
     if deps.error != None:
         return deps
-    deps, unused = _extract_prefix(deps.value, "-L", strip = True)
+    deps, _unused = _extract_prefix(deps.value, "-L", strip = True)
     result = []
     for dep in {dep: True for dep in deps}.keys():
         base = "deps_" + dep.replace("/", "_").replace(".", "_")
@@ -162,7 +159,7 @@ def _pkg_config_impl(ctx):
     if ctx.attr.include_prefix != "":
         include_prefix = ctx.attr.include_prefix + "/" + ctx.attr.name
 
-    build = ctx.template("BUILD", Label("//:BUILD.tmpl"), substitutions = {
+    return ctx.template("BUILD", Label("//:BUILD.tmpl"), substitutions = {
         "%{name}": ctx.attr.name,
         "%{hdrs}": _fmt_glob(includes),
         "%{includes}": _fmt_array(includes),
@@ -188,6 +185,7 @@ pkg_config = repository_rule(
         "linkopts": attr.string_list(doc = "Extra linkopts value."),
         "copts": attr.string_list(doc = "Extra copts value."),
         "ignore_opts": attr.string_list(doc = "Ignore listed opts in copts or linkopts."),
+        "static": attr.bool(doc = "Output linker flags for static linking"),
     },
     local = True,
     implementation = _pkg_config_impl,
